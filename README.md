@@ -1,64 +1,131 @@
 # ip-address-app
 
-Docker + Express (Node.js) で **`127.0.0.1`** と **`0.0.0.0`** にバインドしたサーバーの通信の違いを確認できるミニデモです。
+Node.js 24 + Express + Docker で、**`127.0.0.1`** と **`0.0.0.0`** にバインドしたサーバーの違いを Linux コマンドで確かめる学習用リポジトリです。
 
-## 何が分かる？
-
-| バインドアドレス | コンテナ内部 | コンテナ外部（ホスト） |
+| bind アドレス | コンテナ内から | ホストから (`-p` 経由) |
 |---|---|---|
-| `127.0.0.1` | アクセス可能 | **アクセス不可** (Connection refused) |
-| `0.0.0.0` | アクセス可能 | アクセス可能 |
+| `127.0.0.1` | 届く | **届かない** |
+| `0.0.0.0` | 届く | 届く |
 
-Docker のポートマッピング (`-p 3001:3001`) はコンテナの外側からパケットを転送しますが、コンテナ内のプロセスが `127.0.0.1` にしかバインドしていない場合、外部からの接続は拒否されます。
+## 前提
 
-## 必要なもの
+- Linux (または WSL2) / Docker Engine + Compose v2
+- ローカル実行する場合: Node.js 24 以上、pnpm 10（`corepack enable`）
 
-- Docker & Docker Compose
-- Node.js 20+ & pnpm（ローカル実行する場合）
-
-## クイックスタート (Docker)
+## 1. 起動
 
 ```bash
-# コンテナをビルド & 起動
 docker compose up --build -d
+```
 
-# 0.0.0.0 にバインドしたサーバー → 成功する
-curl http://localhost:3002
+```bash
+docker compose ps
+```
 
-# 127.0.0.1 にバインドしたサーバー → Connection refused になる
-curl http://localhost:3001
+`bind-loopback` はコンテナ内の 3000 を `127.0.0.1` で、`bind-all` は `0.0.0.0` で待ち受けます。ホスト側は `3001` と `3002` に公開しています。
 
-# 後片付け
+## 2. ホストから叩く
+
+```bash
+curl -sS -m 3 http://localhost:3002
+```
+
+JSON が返ります（`0.0.0.0` なので届く）。
+
+```bash
+curl -sS -m 3 http://localhost:3001
+```
+
+接続リセットや空の応答で失敗します（`127.0.0.1` はコンテナ自身のループバックのみ。ホストからの転送先 `eth0` では待ち受けていない）。
+
+## 3. コンテナ内から叩く
+
+```bash
+docker exec bind-loopback curl -sS -m 3 http://127.0.0.1:3000
+```
+
+こちらは成功します。同じサーバーでも「どこから叩くか」で結果が変わることが分かります。
+
+## 4. 待ち受けソケットを見る
+
+```bash
+docker exec bind-loopback ss -tlnp
+```
+
+```bash
+docker exec bind-all ss -tlnp
+```
+
+`Local Address:Port` の列を比べます。
+
+- `bind-loopback`: `127.0.0.1:3000`
+- `bind-all`: `0.0.0.0:3000`
+
+## 5. コンテナの IP を直接叩く
+
+```bash
+docker exec bind-all ip -4 addr show eth0
+```
+
+```bash
+docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' bind-loopback
+```
+
+出てきた IP（例 `172.18.0.2`）に対して、ホストから叩きます。
+
+```bash
+curl -sS -m 3 http://172.18.0.2:3000
+```
+
+`bind-loopback` は拒否され、`bind-all` は応答します（Linux ホストの場合。Docker Desktop では直接届かないことがあります）。
+
+## 6. 後片付け
+
+```bash
 docker compose down
 ```
 
-## ローカル実行
+## ローカル実行 (Docker なし)
 
 ```bash
 pnpm install
+```
 
-# 127.0.0.1 バインド (ポート 3001)
-pnpm start:localhost
+```bash
+pnpm start:loopback
+```
 
-# 0.0.0.0 バインド (ポート 3002)
+```bash
 pnpm start:all
 ```
 
-ローカルで実行した場合はどちらも `curl http://localhost:<port>` でアクセスできます（Docker のネットワーク分離が無いため）。
+別ターミナルで次を実行します。
+
+```bash
+ss -tlnp | grep -E '3001|3002'
+```
+
+## レスポンスの見方
+
+```json
+{
+  "boundHost": "0.0.0.0",
+  "port": 3000,
+  "serverSeenLocalAddress": "172.18.0.2",
+  "clientRemoteAddress": "172.18.0.1"
+}
+```
+
+- `boundHost`: `listen()` に渡したアドレス
+- `serverSeenLocalAddress`: 実際に接続を受けた側のアドレス
+- `clientRemoteAddress`: 接続元。ホスト経由だと Docker ブリッジのゲートウェイ IP になる
 
 ## ファイル構成
 
 ```
 .
-├── server-localhost.js      # 127.0.0.1 にバインドするサーバー
-├── server-allinterfaces.js  # 0.0.0.0 にバインドするサーバー
-├── Dockerfile
-├── docker-compose.yml
-├── package.json
-└── README.md
+├── server.js            # HOST / PORT 環境変数で bind 先を切り替える Express サーバー
+├── Dockerfile           # node:24-slim + iproute2 / curl
+├── docker-compose.yml   # 127.0.0.1 版と 0.0.0.0 版を同時起動
+└── package.json
 ```
-
-## なぜ違いが生まれるのか
-
-- **`127.0.0.1`** はループバックインターフェースのみをリッスンします。Docker コンテナ内では、ホストとコンテナのループバックは別物なので、ポートフォワーディングしても外から到達できません。
-- **`0.0.0.0`** はすべてのネットワークインターフェースをリッスンするため、Docker のポートマッピング経由でホストから到達可能になります。

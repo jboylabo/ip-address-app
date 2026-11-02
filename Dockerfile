@@ -1,12 +1,16 @@
-FROM node:20-slim
+FROM node:24-slim
 
-RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends iproute2 curl procps \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN corepack enable
 
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 
-COPY server-localhost.js server-allinterfaces.js ./
+COPY server.js ./
 
-EXPOSE 3001 3002
+CMD ["node", "server.js"]

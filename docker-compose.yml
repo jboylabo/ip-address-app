@@ -1,12 +1,18 @@
 services:
-  localhost-server:
+  loopback:
     build: .
-    command: node server-localhost.js
+    container_name: bind-loopback
+    environment:
+      HOST: 127.0.0.1
+      PORT: "3000"
     ports:
-      - "3001:3001"
+      - "3001:3000"
 
-  allinterfaces-server:
+  allifaces:
     build: .
-    command: node server-allinterfaces.js
+    container_name: bind-all
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3000"
     ports:
-      - "3002:3002"
+      - "3002:3000"
