@@ -1,0 +1,12 @@
+services:
+  localhost-server:
+    build: .
+    command: node server-localhost.js
+    ports:
+      - "3001:3001"
+
+  allinterfaces-server:
+    build: .
+    command: node server-allinterfaces.js
+    ports:
+      - "3002:3002"

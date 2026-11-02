@@ -1,0 +1,19 @@
+{
+  "name": "ip-address-app",
+  "version": "1.0.0",
+  "description": "Demo: difference between binding to 127.0.0.1 vs 0.0.0.0 in Docker",
+  "scripts": {
+    "start:localhost": "node server-localhost.js",
+    "start:all": "node server-allinterfaces.js",
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down",
+    "docker:test": "docker compose up --build -d && sleep 2 && echo '--- Testing 0.0.0.0 server (should work) ---' && curl -s http://localhost:3002 | node -e \"process.stdin.resume();process.stdin.on('data',d=>console.log(JSON.parse(d)))\" && echo '--- Testing 127.0.0.1 server (should fail) ---' && curl -sf http://localhost:3001 || echo 'Connection refused — as expected!' && docker compose down"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.28.0",
+  "dependencies": {
+    "express": "^5.3.0"
+  }
+}
